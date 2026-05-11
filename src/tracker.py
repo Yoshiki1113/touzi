@@ -40,17 +40,27 @@ def _summarize(fund: dict, txs: list[dict]) -> dict:
         total_profit = round(total_returned - total_invested, 2)
         profit_rate = round((total_profit / total_invested) * 100, 2) if total_invested else 0.0
         status = "已清仓"
+        remaining = 0.0
     elif total_invested > 0:
-        total_profit = round(total_returned - total_invested, 2)
-        profit_rate = round((total_profit / total_invested) * 100, 2) if total_invested else 0.0
+        total_profit = None
+        profit_rate = None
         status = "持有中"
     else:
         total_profit = 0.0
         profit_rate = 0.0
         status = "未投资"
 
+    # 加仓 = 首次建仓后的买入；减仓 = 清仓前的卖出（持有中则所有卖出都算减仓）
+    add_count = max(0, buy_count - 1)
+    if status == "已清仓":
+        reduce_count = max(0, sell_count - 1)
+    else:
+        reduce_count = sell_count
+
     buy_dates = sorted(set(t["date"] for t in buys))
     sell_dates = sorted(set(t["date"] for t in sells))
+    add_dates = buy_dates[1:] if len(buy_dates) > 1 else []
+    reduce_dates = (sell_dates[:-1] if len(sell_dates) > 1 else []) if status == "已清仓" else sell_dates
 
     return {
         **fund,
@@ -62,8 +72,12 @@ def _summarize(fund: dict, txs: list[dict]) -> dict:
         "holding_days": holding_days,
         "buy_count": buy_count,
         "sell_count": sell_count,
+        "add_count": add_count,
+        "reduce_count": reduce_count,
         "buy_dates": buy_dates,
         "sell_dates": sell_dates,
+        "add_dates": add_dates,
+        "reduce_dates": reduce_dates,
         "first_buy": first_buy,
         "last_tx": last_tx,
         "status": status,
@@ -86,7 +100,7 @@ def get_portfolio_summary(summaries: list[dict[str, Any]]) -> dict[str, Any]:
     total_invested = sum(s["total_invested"] for s in summaries)
     total_returned = sum(s["total_returned"] for s in summaries)
     total_remaining = sum(s["remaining"] for s in summaries)
-    total_profit = sum(s["total_profit"] for s in summaries)
+    total_profit = sum(s["total_profit"] for s in summaries if s["total_profit"] is not None)
     active = sum(1 for s in summaries if s["status"] == "持有中")
     closed = sum(1 for s in summaries if s["status"] == "已清仓")
 
@@ -112,5 +126,5 @@ def get_transaction_timeline(fund_id: int) -> list[dict[str, Any]]:
             running += tx["amount"]
         else:
             running -= tx["amount"]
-        tx["running_balance"] = round(running, 2)
+        tx["running_balance"] = round(max(0, running), 2)
     return txs
